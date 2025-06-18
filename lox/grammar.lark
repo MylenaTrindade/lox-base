@@ -1,20 +1,68 @@
 ?start     : program
 
-program    : stmt*
+program    : declaration*
+
+?declaration: var_def 
+            | fun_def
+            //| class_def
+            | stmt
+
+var_def : "var" VAR ("=" expr)? ";"
+
+fun_def    : "fun" VAR "(" fun_args ")" block
+fun_args   : [VAR ( "," VAR )*]
 
 ?stmt      : expr ";"
            | print_cmd
-           // | if_cmd
-           // | for_cmd
-           // | ...
+           | if_cmd
+           | for_cmd
+           | while_cmd
+           | block
+           | return_cmd
 
 print_cmd  : "print" expr ";"
 
-// EXPRESSÕES
-?expr      : test
+if_cmd     : "if" "(" expr ")" stmt ["else" stmt]
 
-?test      : test "==" cmp  -> eq
-           | test "!=" cmp  -> ne
+for_cmd    : "for" "(" for_init for_cond ";" for_incr ")" stmt
+
+for_init   : var_def
+           | expr ";"
+           | ";"               -> empty
+
+for_cond   : expr
+           |                   -> true_expr
+
+for_incr   : expr
+           |                   -> empty
+
+while_cmd  : "while" "(" expr ")" stmt
+
+block      : "{" declaration* "}"
+
+opt_expr   : expr?
+
+return_cmd : "return" expr? ";"
+
+// EXPRESSÕES
+
+?expr      : expr "." VAR "=" expr   -> setattr
+           | VAR "=" expr            -> assign
+           | expr "." VAR            -> getattr
+           | expr "(" params ")"     -> call
+           | expr "+" expr           -> add
+           | expr "-" expr           -> sub
+           | expr "and" cmp          -> and_
+           | expr "or" cmp           -> or_
+           | "(" expr ")"
+           | test
+
+
+//assign     : VAR "=" assign
+           //| test
+
+?test      : expr "==" cmp  -> eq
+           | expr "!=" cmp  -> ne
            | cmp
 
 ?cmp       : cmp ">" factor   -> gt
@@ -26,10 +74,15 @@ print_cmd  : "print" expr ";"
 ?factor    : factor "+" term  -> add
            | factor "-" term  -> sub
            | term
+           
 
 ?term      : term "*" atom   -> mul
            | term "/" atom   -> div 
-           | atom
+           | unary
+
+?unary     : MINUS unary   -> unary
+           | NOT unary     -> unary
+           | atom          
 
 ?atom      : NUMBER 
            | BOOL
@@ -39,14 +92,22 @@ print_cmd  : "print" expr ";"
            | "(" cmp ")"
            | call
 
-call       : VAR "(" params ")"
+
+call: atom "(" [expr ("," expr)*] ")"
+
 params     : [ expr ("," expr )* ]
 
+EQUAL      : "="
+MINUS      : "-"
+NOT        : "!"
 BOOL.2     : "true" | "false"
+DOT.2      : "."  
 VAR.1      : /[a-z_]\w*/
 NUMBER     : /([1-9][0-9]*|0)(\.[0-9]+)?/ 
 STRING     : /"[^"]*"/
 NIL.2      : "nil"
 COMMENT    : "//" /[^\n]*/
+true_expr  :                    -> true_expr
+empty      :                    -> empty
 
 %ignore /\s/ | COMMENT

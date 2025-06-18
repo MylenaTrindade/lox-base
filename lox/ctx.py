@@ -49,26 +49,26 @@ class Ctx:
         """
         return cls(env, Ctx(BUILTINS, None))
 
-    def __getitem__(self, name: str) -> "Value":
-        """
-        Obtém o valor de uma variável pelo nome.
-        """
-        if name in self.scope:
-            return self.scope[name]
-        elif self.parent is not None:
-            return self.parent[name]
-        raise KeyError(f"Variable '{name}' not found in context.")
+    def __getitem__(self, key):
+        """Busca uma variável no escopo atual ou nos escopos pais"""
+        try:
+            return self.scope[key]
+        except KeyError:
+            if self.parent is not None:
+                return self.parent[key]
+            raise KeyError(f"Variável '{key}' não encontrada")
 
-    def __setitem__(self, name: str, value: "Value") -> None:
+    def __setitem__(self, key, value):
         """
-        Define o valor de uma variável pelo nome.
+        Define o valor de uma variável existente no escopo atual ou em um escopo pai.
+        Se a variável não existir em nenhum escopo, lança KeyError.
         """
-        if name in self.scope:
-            self.scope[name] = value
+        if key in self.scope:
+            self.scope[key] = value
         elif self.parent is not None:
-            self.parent[name] = value
+            self.parent[key] = value
         else:
-            raise KeyError(f"Variable '{name}' not found in context.")
+            raise KeyError(f"Variável '{key}' não foi declarada")
 
     def __contains__(self, name: str) -> bool:
         """
@@ -76,13 +76,15 @@ class Ctx:
         """
         return name in self.scope or (self.parent is not None and name in self.parent)
 
-    def var_def(self, name: str, value: "Value") -> None:
+    def var_def(self, key, value=None):
         """
-        Define uma variável no contexto atual.
+        Define uma nova variável no escopo atual.
+        Se a variável já existir no escopo atual (não nos escopos pais) e
+        não estivermos no escopo global, lança um erro.
         """
-        if name in self.scope and not self.is_global():
-            raise KeyError(f"Variable '{name}' already defined in the current scope.")
-        self.scope[name] = value
+        if key in self.scope and not self.is_global():
+            raise NameError(f"Variável '{key}' já foi declarada neste escopo")
+        self.scope[key] = value
 
     def to_dict(self) -> ScopeDict:
         """
@@ -115,19 +117,15 @@ class Ctx:
             lines.append(pretty_scope(scope, i))
         return "\n".join(reversed(lines))
 
-    def pop(self) -> tuple[ScopeDict, "Ctx"]:
-        """
-        Remove o escopo mais interno e retorna o contexto atualizado.
-        """
+    def pop(self):
+        """Remove o escopo mais interno e retorna (escopo, contexto_pai)"""
         if self.parent is None:
             raise RuntimeError("Cannot pop the global scope.")
         return self.scope, self.parent
 
-    def push(self, env: ScopeDict) -> "Ctx":
-        """
-        Empilha um novo escopo no contexto atual.
-        """
-        return Ctx(env, self)
+    def push(self, scope=None):
+        """Cria um novo contexto com um novo escopo, tendo o contexto atual como pai"""
+        return Ctx(scope or {}, self)
 
     def is_global(self) -> bool:
         """

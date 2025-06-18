@@ -1,6 +1,6 @@
 from abc import ABC
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Union
 
 from .ctx import Ctx
 
@@ -18,7 +18,7 @@ from .node import Node
 #
 
 # Tipos de valores que podem aparecer durante a execução do programa
-Value = bool | str | float | None
+Value = bool | str | float | None | Callable
 
 
 class Expr(Node, ABC):
@@ -115,6 +115,14 @@ class And(Expr):
 
     Ex.: x and y
     """
+    left: Expr
+    right: Expr
+
+    def eval(self, ctx: Ctx):
+        left_value = self.left.eval(ctx)
+        if is_falsey(left_value):
+            return left_value
+        return self.right.eval(ctx)
 
 
 @dataclass
@@ -123,6 +131,14 @@ class Or(Expr):
     Uma operação infixa com dois operandos.
     Ex.: x or y
     """
+    left: Expr
+    right: Expr
+
+    def eval(self, ctx: Ctx):
+        left_value = self.left.eval(ctx)
+        if not is_falsey(left_value):
+            return left_value
+        return self.right.eval(ctx)
 
 
 @dataclass
@@ -132,6 +148,12 @@ class UnaryOp(Expr):
 
     Ex.: -x, !x
     """
+    expr: Expr
+    op: Callable[[Value], Value]
+
+    def eval(self, ctx: Ctx):
+        expr_value = self.expr.eval(ctx)
+        return self.op(expr_value)
 
 
 @dataclass
@@ -141,19 +163,34 @@ class Call(Expr):
 
     Ex.: fat(42)
     """
-    name: str
-    params: list[Expr]
-    
-    def eval(self, ctx: Ctx):
-        func = ctx[self.name]
-        params = []
-        for param in self.params:
-            params.append(param.eval(ctx))
-        
-        if callable(func):
-            return func(*params)
-        raise TypeError(f"{self.name} não é uma função!")
 
+    callee: Var
+    params: list[Expr] | None
+
+    def eval(self, ctx: Ctx):
+        func = self._eval_callee(ctx)
+    
+        args = [param.eval(ctx) for param in self.params]
+        
+        return func(*args)
+
+    def _eval_callee(self, ctx):
+        callee = self.callee
+        if isinstance(callee, Var):
+            val = ctx[callee.name]
+            # print(f"Resolvido Var: {callee.name} -> {val} ({type(val)})")  # COMENTE OU REMOVA
+            return val
+        elif isinstance(callee, Getattr):
+            obj = callee.attr_main.eval(ctx)
+            attr = getattr(obj, callee.attr)
+            # print(f"Getattr: {obj}.{callee.attr} -> {attr} ({type(attr)})")  # COMENTE OU REMOVA
+            return attr
+        elif isinstance(callee, Call):
+            val = callee.eval(ctx)
+            # print(f"Call retornou: {val} ({type(val)})")  # COMENTE OU REMOVA
+            return val
+        else:
+            raise RuntimeError(f"Unsupported callee type: {type(callee)}")
 
 @dataclass
 class This(Expr):
@@ -181,6 +218,15 @@ class Assign(Expr):
     Ex.: x = 42
     """
 
+    name: str
+    value: Expr
+
+    def eval(self, ctx: Ctx):
+        key = self.name
+        value = self.value.eval(ctx)
+        ctx[key] = value
+        return value
+
 
 @dataclass
 class Getattr(Expr):
@@ -189,6 +235,29 @@ class Getattr(Expr):
 
     Ex.: x.y
     """
+    attr_main: Expr  
+    attr: str
+    subattr:  Union[str, Expr,None]
+
+    def eval(self, ctx: Ctx):
+
+        obj = self.attr_main.eval(ctx)
+
+        # Primeiro nível: getattr(obj, attr)
+        value = getattr(obj, self.attr)
+
+        # Encadeamento: getattr(obj.attr, subattr)
+        if self.subattr is not None:
+            if isinstance(self.subattr, Var):
+                subattr_name = self.subattr.name
+            elif isinstance(self.subattr, Expr):
+                subattr_name = self.subattr.eval(ctx)
+            else:
+                subattr_name = self.subattr
+
+            value = getattr(value, subattr_name)
+
+        return value
 
 
 @dataclass
@@ -198,6 +267,16 @@ class Setattr(Expr):
 
     Ex.: x.y = 42
     """
+
+    target: Expr
+    attr: str
+    value: Expr
+
+    def eval(self, ctx: Ctx):
+        target = self.target.eval(ctx)
+        value = self.value.eval(ctx)
+        setattr(target, self.attr, value)
+        return value
 
 
 #
@@ -210,8 +289,9 @@ class Print(Stmt):
 
     Ex.: print "Hello, world!";
     """
+
     expr: Expr
-    
+
     def eval(self, ctx: Ctx):
         value = self.expr.eval(ctx)
         print(value)
@@ -225,6 +305,12 @@ class Return(Stmt):
     Ex.: return x;
     """
 
+    expr: Expr
+
+    def eval(self, ctx: Ctx):
+        value = self.expr.eval(ctx)
+        raise LoxReturn(value)
+
 
 @dataclass
 class VarDef(Stmt):
@@ -233,6 +319,13 @@ class VarDef(Stmt):
 
     Ex.: var x = 42;
     """
+
+    name: str
+    value: Expr | None
+
+    def eval(self, ctx: Ctx):
+        val = self.value.eval(ctx) if self.value is not None else None
+        ctx.var_def(self.name, val)
 
 
 @dataclass
@@ -243,14 +336,18 @@ class If(Stmt):
     Ex.: if (x > 0) { ... } else { ... }
     """
 
+    cond: Expr
+    then: Stmt
+    orelse: Stmt
 
-@dataclass
-class For(Stmt):
-    """
-    Representa um laço de repetição.
+    def eval(self, ctx: Ctx):
+        cond = self.cond.eval(ctx)
+        if is_lox_true(cond):
+            self.then.eval(ctx)
+        else:
+            self.orelse.eval(ctx)
 
-    Ex.: for (var i = 0; i < 10; i++) { ... }
-    """
+
 
 
 @dataclass
@@ -261,15 +358,29 @@ class While(Stmt):
     Ex.: while (x > 0) { ... }
     """
 
+    cond: Expr
+    body: Stmt
+
+    def eval(self, ctx: Ctx):
+        cond = self.cond.eval(ctx)
+        if is_lox_true(cond):
+            self.body.eval(ctx)
+            self.eval(ctx)
+
 
 @dataclass
-class Block(Node):
+class Block(Stmt):
     """
     Representa bloco de comandos.
-
     Ex.: { var x = 42; print x;  }
     """
+    stmts: list[Stmt]
 
+    def eval(self, ctx: Ctx):
+        new_ctx = ctx.push({})
+        
+        for stmt in self.stmts:
+            stmt.eval(new_ctx)
 
 @dataclass
 class Function(Stmt):
@@ -279,6 +390,15 @@ class Function(Stmt):
     Ex.: fun f(x, y) { ... }
     """
 
+    name: str
+    arg_names: list[str]
+    body: list[Stmt]
+
+    def eval(self, ctx: Ctx):
+        func = LoxFunction(self.arg_names, self.body, ctx)
+        ctx.var_def(self.name, func)
+        return func
+
 
 @dataclass
 class Class(Stmt):
@@ -287,3 +407,60 @@ class Class(Stmt):
 
     Ex.: class B < A { ... }
     """
+
+
+def is_lox_true(value):
+    return (value is not False) and (value is not None)
+
+
+@dataclass
+class LoxFunction:
+    """
+    Representa uma função lox em tempo de execução
+    """
+
+    arg_names: list[str]
+    body: list[Stmt]
+    ctx: Ctx
+
+    def __call__(self, *values):
+        """
+        self.__call__(*args) <==> self(*args)
+        """
+        names = self.arg_names
+        if len(names) != len(values):
+            msg = f"esperava {len(names)} argumentos, recebeu {len(values)}"
+            raise TypeError(msg)
+
+        # Associa cada nome em names ao valor correspondente em values
+        scope = dict(zip(names, values))
+
+        # Avalia cada comando no corpo da função dentro do escopo local
+        ctx = Ctx(scope, self.ctx)
+        try:
+            for stmt in self.body:
+                stmt.eval(ctx)
+        except LoxReturn as e:
+            return e.value
+
+
+class LoxReturn(Exception):
+    value: Value
+
+    def __init__(self, value):
+        self.value = value
+        super().__init__()
+
+def is_falsey(value):
+    return value is False or value is None
+
+@dataclass
+class Expression(Stmt):
+    """
+    Representa uma expressão usada como statement.
+    Útil para expressões de incremento em loops for.
+    """
+    expr: Expr
+
+    def eval(self, ctx: Ctx):
+        return self.expr.eval(ctx)
