@@ -4,13 +4,16 @@ program    : declaration*
 
 ?declaration: var_def 
             | fun_def
-            //| class_def
+            | class_def
             | stmt
 
 var_def : "var" VAR ("=" expr)? ";"
 
 fun_def    : "fun" VAR "(" fun_args ")" block
 fun_args   : [VAR ( "," VAR )*]
+
+class_def  : "class" VAR "{" class_body "}"
+class_body : [fun_def*]
 
 ?stmt      : expr ";"
            | print_cmd
@@ -46,54 +49,50 @@ return_cmd : "return" expr? ";"
 
 // EXPRESSÕES
 
-?expr      : expr "." VAR "=" expr   -> setattr
-           | VAR "=" expr            -> assign
-           | expr "." VAR            -> getattr
-           | expr "(" params ")"     -> call
-           | expr "+" expr           -> add
-           | expr "-" expr           -> sub
-           | expr "and" cmp          -> and_
-           | expr "or" cmp           -> or_
-           | "(" expr ")"
-           | test
+?expr      : assign
 
+?assign    : call "." VAR "=" assign  -> setattr
+           | VAR "=" assign           -> assign
+           | logic_or
 
-//assign     : VAR "=" assign
-           //| test
+?logic_or  : logic_and
+           | logic_or "or" logic_and  -> or_
 
-?test      : expr "==" cmp  -> eq
-           | expr "!=" cmp  -> ne
-           | cmp
+?logic_and : equality  
+           | logic_and "and" equality -> and_
 
-?cmp       : cmp ">" factor   -> gt
-           | cmp "<" factor   -> lt
-           | cmp ">=" factor  -> ge
-           | cmp "<=" factor  -> le
-           | factor
+?equality  : comparison
+           | equality "==" comparison -> eq
+           | equality "!=" comparison -> ne
 
-?factor    : factor "+" term  -> add
-           | factor "-" term  -> sub
-           | term
-           
+?comparison: term
+           | comparison ">" term      -> gt
+           | comparison "<" term      -> lt
+           | comparison ">=" term     -> ge
+           | comparison "<=" term     -> le
 
-?term      : term "*" atom   -> mul
-           | term "/" atom   -> div 
-           | unary
+?term      : factor
+           | term "+" factor          -> add
+           | term "-" factor          -> sub
 
-?unary     : MINUS unary   -> unary
-           | NOT unary     -> unary
-           | atom          
+?factor    : unary
+           | factor "*" unary         -> mul
+           | factor "/" unary         -> div
 
-?atom      : NUMBER 
+?unary     : "-" unary                -> neg
+           | "!" unary                -> not_
+           | call
+
+?call      : call "(" params ")"      -> call
+           | call "." VAR             -> getattr
+           | primary
+
+?primary   : NUMBER
            | BOOL
            | VAR
            | STRING
            | NIL
-           | "(" cmp ")"
-           | call
-
-
-call: atom "(" [expr ("," expr)*] ")"
+           | "(" expr ")"
 
 params     : [ expr ("," expr )* ]
 
@@ -102,12 +101,11 @@ MINUS      : "-"
 NOT        : "!"
 BOOL.2     : "true" | "false"
 DOT.2      : "."  
-VAR.1      : /[a-z_]\w*/
+VAR.1      : /[a-zA-Z_]\w*/
 NUMBER     : /([1-9][0-9]*|0)(\.[0-9]+)?/ 
 STRING     : /"[^"]*"/
 NIL.2      : "nil"
 COMMENT    : "//" /[^\n]*/
-true_expr  :                    -> true_expr
-empty      :                    -> empty
+CLASS.2    : "class"
 
 %ignore /\s/ | COMMENT

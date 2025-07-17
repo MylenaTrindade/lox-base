@@ -63,22 +63,22 @@ class LoxTransformer(Transformer):
     def block(self, *stmts: Stmt):
         return Block(list(stmts))
 
-    def assign(self, var: Var, value: Expr):
-        return Assign(var.name, value)
+    def assign(self, var, value: Expr):
+        var_name = var.name if hasattr(var, 'name') else str(var)
+        return Assign(var_name, value)
 
-    def getattr(self, var, attr, subattr: Var| None =None):
+    def getattr(self, obj, attr):
         if isinstance(attr, Token):
             attr_name = attr.value
-        elif isinstance(attr, Var):
-            attr_name = attr.name  
         else:
-            attr_name = attr
-        if isinstance(subattr, Call):
-            return Call(call=Getattr(var, attr_name, subattr.call),params=subattr.params)
-        return Getattr(var, attr_name, subattr)
+            attr_name = str(attr) if hasattr(attr, 'name') is False else attr.name
+        return Getattr(obj, attr_name, None)
     
     def setattr(self, obj, attr, value):
-        attr_name = attr.name if isinstance(attr, Var) else str(attr)
+        if isinstance(attr, Token):
+            attr_name = attr.value
+        else:
+            attr_name = str(attr)
         return Setattr(obj, attr_name, value)
 
     def and_(self, left, right):
@@ -87,13 +87,11 @@ class LoxTransformer(Transformer):
     def or_(self, left, right):
         return Or(left, right)
 
-    def unary(self, op_token, expr):
-        op_str = str(op_token)
-        fn = {
-            "-": op.neg,
-            "!": op.not_
-        }[op_str]
-        return UnaryOp(expr=expr, op=fn)
+    def neg(self, expr):
+        return UnaryOp(expr=expr, op=op.neg)
+
+    def not_(self, expr):
+        return UnaryOp(expr=expr, op=op.not_)
 
 
     def print_cmd(self, expr: Expr) -> Print:
@@ -186,3 +184,12 @@ class LoxTransformer(Transformer):
 
     def true_expr(self, _=None):
         return Literal(True)
+
+    def class_def(self, name, methods: list):
+        """Transforma definição de classe"""
+        name_str = name.name if hasattr(name, 'name') else str(name)
+        return Class(name_str, methods if methods else [])
+
+    def class_body(self, *methods):
+        """Transforma corpo da classe"""
+        return list(methods)

@@ -293,8 +293,9 @@ class Print(Stmt):
     expr: Expr
 
     def eval(self, ctx: Ctx):
+        from . import runtime
         value = self.expr.eval(ctx)
-        print(value)
+        runtime.print(value)
 
 
 @dataclass
@@ -395,7 +396,7 @@ class Function(Stmt):
     body: list[Stmt]
 
     def eval(self, ctx: Ctx):
-        func = LoxFunction(self.arg_names, self.body, ctx)
+        func = LoxFunction(self.arg_names, self.body, ctx, self.name)
         ctx.var_def(self.name, func)
         return func
 
@@ -407,10 +408,19 @@ class Class(Stmt):
 
     Ex.: class B < A { ... }
     """
+    name: str
+    methods: list[Function] = None
+
+    def eval(self, ctx: Ctx):
+        from . import runtime
+        lox_class = runtime.LoxClass(self.name)
+        ctx.var_def(self.name, lox_class)
+        return lox_class
 
 
 def is_lox_true(value):
-    return (value is not False) and (value is not None)
+    from . import runtime
+    return runtime.truthy(value)
 
 
 @dataclass
@@ -422,6 +432,10 @@ class LoxFunction:
     arg_names: list[str]
     body: list[Stmt]
     ctx: Ctx
+    name: str = "anonymous"
+
+    def __str__(self):
+        return f"<fn {self.name}>"
 
     def __call__(self, *values):
         """
