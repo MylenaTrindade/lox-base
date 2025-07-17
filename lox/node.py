@@ -159,7 +159,7 @@ class Node(ABC):
         """
 
         # Primeiro visitamos os filhos do nó atual.
-        for name in self.__annotations__:
+        for name in getattr(self, '__annotations__', {}):
             value = getattr(self, name)
             if isinstance(value, Node):
                 value.visit(visitors)
@@ -183,7 +183,7 @@ class Node(ABC):
         do nó atual. Isso é útil para percorrer a árvore sintática de forma
         recursiva.
         """
-        for name in self.__annotations__:
+        for name in getattr(self, '__annotations__', {}):
             value = getattr(self, name)
             if isinstance(value, Node):
                 yield value

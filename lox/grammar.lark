@@ -7,13 +7,15 @@ program    : declaration*
             | class_def
             | stmt
 
-var_def : "var" VAR ("=" expr)? ";"
+var_def : VAR_KW VAR ("=" expr)? ";"
 
-fun_def    : "fun" VAR "(" fun_args ")" block
+fun_def    : FUN VAR "(" fun_args ")" block
 fun_args   : [VAR ( "," VAR )*]
 
-class_def  : "class" VAR "{" class_body "}"
-class_body : [fun_def*]
+class_def  : CLASS VAR ("<" VAR)? "{" class_body "}"
+class_body : method_def*
+
+method_def : VAR "(" fun_args ")" block
 
 ?stmt      : expr ";"
            | print_cmd
@@ -23,11 +25,11 @@ class_body : [fun_def*]
            | block
            | return_cmd
 
-print_cmd  : "print" expr ";"
+print_cmd  : PRINT expr ";"
 
-if_cmd     : "if" "(" expr ")" stmt ["else" stmt]
+if_cmd     : IF "(" expr ")" stmt [ELSE stmt]
 
-for_cmd    : "for" "(" for_init for_cond ";" for_incr ")" stmt
+for_cmd    : FOR "(" for_init for_cond ";" for_incr ")" stmt
 
 for_init   : var_def
            | expr ";"
@@ -39,13 +41,13 @@ for_cond   : expr
 for_incr   : expr
            |                   -> empty
 
-while_cmd  : "while" "(" expr ")" stmt
+while_cmd  : WHILE "(" expr ")" stmt
 
 block      : "{" declaration* "}"
 
 opt_expr   : expr?
 
-return_cmd : "return" expr? ";"
+return_cmd : RETURN expr? ";"
 
 // EXPRESSÕES
 
@@ -85,14 +87,18 @@ return_cmd : "return" expr? ";"
 
 ?call      : call "(" params ")"      -> call
            | call "." VAR             -> getattr
+           | SUPER "." VAR            -> super_getattr
            | primary
 
 ?primary   : NUMBER
            | BOOL
+           | this_expr
            | VAR
            | STRING
            | NIL
            | "(" expr ")"
+
+this_expr  : THIS
 
 params     : [ expr ("," expr )* ]
 
@@ -101,11 +107,21 @@ MINUS      : "-"
 NOT        : "!"
 BOOL.2     : "true" | "false"
 DOT.2      : "."  
-VAR.1      : /[a-zA-Z_]\w*/
 NUMBER     : /([1-9][0-9]*|0)(\.[0-9]+)?/ 
 STRING     : /"[^"]*"/
 NIL.2      : "nil"
 COMMENT    : "//" /[^\n]*/
-CLASS.2    : "class"
+CLASS.2    : /\bclass\b/
+FUN.2      : /\bfun\b/
+RETURN.2   : /\breturn\b/
+IF.2       : "if"
+ELSE.2     : "else"
+FOR.2      : "for"
+WHILE.2    : "while"
+SUPER.2    : /\bsuper\b/
+THIS.2     : /\bthis\b/
+PRINT.2    : /\bprint\b/
+VAR_KW.2   : /\bvar\b/
+VAR.1      : /[a-zA-Z_]\w*/
 
 %ignore /\s/ | COMMENT

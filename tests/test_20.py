@@ -1,6 +1,7 @@
 from lox import *
 from lox import testing
 from lox.ast import *
+from lox.runtime import LoxClass
 
 
 def test_criou_objeto_LoxClass():

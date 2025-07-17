@@ -60,6 +60,9 @@ class LoxTransformer(Transformer):
         return params
 
     # Comandos
+    def __init__(self):
+        super().__init__()
+        
     def block(self, *stmts: Stmt):
         return Block(list(stmts))
 
@@ -70,13 +73,27 @@ class LoxTransformer(Transformer):
     def getattr(self, obj, attr):
         if isinstance(attr, Token):
             attr_name = attr.value
+        elif hasattr(attr, 'name'):
+            attr_name = attr.name
         else:
-            attr_name = str(attr) if hasattr(attr, 'name') is False else attr.name
+            attr_name = str(attr)
+        
         return Getattr(obj, attr_name, None)
     
+    def super_getattr(self, super_token, attr):
+        if isinstance(attr, Token):
+            attr_name = attr.value
+        elif hasattr(attr, 'name'):
+            attr_name = attr.name
+        else:
+            attr_name = str(attr)
+        return Getattr(Super(), attr_name, None)
+
     def setattr(self, obj, attr, value):
         if isinstance(attr, Token):
             attr_name = attr.value
+        elif hasattr(attr, 'name'):
+            attr_name = attr.name
         else:
             attr_name = str(attr)
         return Setattr(obj, attr_name, value)
@@ -94,16 +111,24 @@ class LoxTransformer(Transformer):
         return UnaryOp(expr=expr, op=op.not_)
 
 
-    def print_cmd(self, expr: Expr) -> Print:
+    def print_cmd(self, token, expr: Expr) -> Print:
         return Print(expr)
 
-    def var_def(self, var: Var, value: Expr|None = None):
+    def var_def(self, token, var: Var, value: Expr|None = None):
         return VarDef(var.name, value)
 
-    def if_cmd(self, cond: Expr, then: Stmt, orelse: Stmt = Block([])):
-        return If(cond, then, orelse)
+    def if_cmd(self, *args):
+        # Args can be: [IF_token, cond, then] or [IF_token, cond, then, ELSE_token, orelse]
+        if len(args) == 3:
+            token, cond, then = args
+            return If(cond, then, None)
+        elif len(args) == 5:
+            token, cond, then, else_token, orelse = args
+            return If(cond, then, orelse)
+        else:
+            raise ValueError(f"if_cmd expected 3 or 5 args, got {len(args)}: {args}")
 
-    def while_cmd(self, cond: Expr, body: Stmt):
+    def while_cmd(self, token, cond: Expr, body: Stmt):
         return While(cond, body)
 
     def for_init(self, *args):
@@ -121,7 +146,7 @@ class LoxTransformer(Transformer):
             return Literal(None)
         return args[0]
 
-    def for_cmd(self, init, cond, incr, body):
+    def for_cmd(self, token, init, cond, incr, body):
         """
         Transforma for (init; cond; incr) body em:
         {
@@ -150,13 +175,13 @@ class LoxTransformer(Transformer):
         
         return Block(statements)
 
-    def fun_def(self, name: Var, args: list[str], body: Block):
+    def fun_def(self, token, name: Var, args: list[str], body: Block):
         return Function(name.name, args, body.stmts)
         
     def fun_args(self, *args: Var) -> list[str]:
-        return [arg.name for arg in args]
+        return [arg.name for arg in args if arg is not None]
     
-    def return_cmd(self, expr: Expr = None):
+    def return_cmd(self, token, expr: Expr = None):
         if expr is None:
             expr = Literal(None)
         return Return(expr)
@@ -185,11 +210,32 @@ class LoxTransformer(Transformer):
     def true_expr(self, _=None):
         return Literal(True)
 
-    def class_def(self, name, methods: list):
+    def class_def(self, token, name, *args):
         """Transforma definição de classe"""
         name_str = name.name if hasattr(name, 'name') else str(name)
-        return Class(name_str, methods if methods else [])
+        
+        # Analisar argumentos: pode ser [superclass, methods] ou apenas [methods]
+        superclass_str = None
+        methods = []
+        
+        if len(args) == 1:
+            # Apenas methods
+            methods = args[0] if args[0] else []
+        elif len(args) == 2:
+            # superclass e methods
+            superclass = args[0]
+            methods = args[1] if args[1] else []
+            superclass_str = superclass.name if superclass and hasattr(superclass, 'name') else None
+            
+        return Class(name_str, methods, superclass_str)
 
     def class_body(self, *methods):
         """Transforma corpo da classe"""
         return list(methods)
+
+    def method_def(self, name: Var, args: list[str], body: Block):
+        """Transforma definição de método"""
+        return Function(name.name, args, body.stmts)
+
+    def this_expr(self, token):
+        return This()
