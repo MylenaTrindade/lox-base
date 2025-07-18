@@ -62,9 +62,24 @@ class LoxTransformer(Transformer):
     # Comandos
     def __init__(self):
         super().__init__()
+        self._in_block = False  # Track if we're currently transforming inside a block
         
     def block(self, *stmts: Stmt):
-        return Block(list(stmts))
+        # Set flag to indicate we're processing a block
+        old_in_block = self._in_block
+        self._in_block = True
+        
+        # Process each statement in the block
+        processed_stmts = []
+        for stmt in stmts:
+            if isinstance(stmt, VarDef) and stmt.value is not None:
+                # Check for self-reference in local variable initializers
+                self._check_self_reference_in_initializer(stmt.name, stmt.value)
+            processed_stmts.append(stmt)
+        
+        # Restore previous state
+        self._in_block = old_in_block
+        return Block(processed_stmts)
 
     def assign(self, var, value: Expr):
         var_name = var.name if hasattr(var, 'name') else str(var)
@@ -116,6 +131,33 @@ class LoxTransformer(Transformer):
 
     def var_def(self, token, var: Var, value: Expr|None = None):
         return VarDef(var.name, value)
+    
+    def _check_self_reference_in_initializer(self, var_name: str, expr: Expr):
+        """Check if the expression references the variable being declared"""
+        from .ast import Var as VarExpr, BinOp, UnaryOp, Call, Getattr, Setattr
+        
+        if isinstance(expr, VarExpr):
+            if expr.name == var_name:
+                from .errors import SemanticError
+                raise SemanticError(f"Can't read local variable in its own initializer.", token=var_name)
+        elif isinstance(expr, BinOp):
+            self._check_self_reference_in_initializer(var_name, expr.left)
+            self._check_self_reference_in_initializer(var_name, expr.right)
+        elif isinstance(expr, UnaryOp):
+            self._check_self_reference_in_initializer(var_name, expr.expr)
+        elif isinstance(expr, Call):
+            self._check_self_reference_in_initializer(var_name, expr.callee)
+            if expr.params:
+                for arg in expr.params:
+                    if arg is not None:
+                        self._check_self_reference_in_initializer(var_name, arg)
+        elif isinstance(expr, Getattr):
+            self._check_self_reference_in_initializer(var_name, expr.attr_main)
+            if isinstance(expr.subattr, Expr):
+                self._check_self_reference_in_initializer(var_name, expr.subattr)
+        elif isinstance(expr, Setattr):
+            self._check_self_reference_in_initializer(var_name, expr.target)
+            self._check_self_reference_in_initializer(var_name, expr.value)
 
     def if_cmd(self, *args):
         # Args can be: [IF_token, cond, then] or [IF_token, cond, then, ELSE_token, orelse]
